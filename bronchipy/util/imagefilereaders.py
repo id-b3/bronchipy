@@ -9,7 +9,7 @@ with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning)
     import nibabel as nib
 
-from util.functionsutil import fileextension, handle_error_message
+from .functionsutil import fileextension, handle_error_message
 
 
 class ImageFileReader(object):
