@@ -1,97 +1,83 @@
 import logging
+import warnings
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from .visualise import save_pi10_figure
 from sklearn.linear_model import LinearRegression
 
 
-def fractal_dimension(
-    array, max_box_size=None, min_box_size=1, n_samples=20, n_offsets=0, plot=False,
-    binarize=True
-):
-    """Calculates the fractal dimension of a 3D numpy array.
+def fractal_dimension(c, plot_type=None):
 
-    Args:
-        array (np.ndarray): The array to calculate the fractal dimension of.
-        max_box_size (int): The largest box size, given as the power of 2 so that
-                            2**max_box_size gives the sidelength of the largest box.
-        min_box_size (int): The smallest box size, given as the power of 2 so that
-                            2**min_box_size gives the sidelength of the smallest box.
-                            Default value 1.
-        n_samples (int): number of scales to measure over.
-        n_offsets (int): number of offsets to search over to find the smallest set N(s) to
-                       cover  all voxels>0.
-        plot (bool): set to true to see the analytical plot of a calculation.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        c = np.asarray(c > 0, dtype=int)
 
+    dim = np.ndim(c)
 
-    """
-    if binarize:
-        array = np.where(array > 0.3, array, 1)
+    if dim > 3:
+        raise ValueError("Maximum dimension is 3.")
 
-    # determine the scales to measure on
-    if max_box_size is None:
-        # default max size is the largest power of 2 that fits in the smallest dimension of the array:
-        max_box_size = int(np.floor(np.log2(np.min(array.shape))))
-    scales = np.floor(np.logspace(max_box_size, min_box_size, num=n_samples, base=2))
-    scales = np.unique(scales)  # remove duplicates that occur due to floor
+    if dim == 1 and c.shape[0] != 1:
+        c = c.reshape(1, -1)
 
-    # get the locations of all non-zero pixels
-    locs = np.where(array > 0)
-    voxels = np.array([(x, y, z) for x, y, z in zip(*locs)])
+    width = np.max(c.shape)
+    p = np.log2(width)
 
-    # count the minimum amount of boxes touched
-    Ns = []
-    # loop over all scales
-    for scale in scales:
-        touched = []
-        if n_offsets == 0:
-            offsets = [0]
-        else:
-            offsets = np.linspace(0, scale, n_offsets)
-        # search over all offsets
-        for offset in offsets:
-            bin_edges = [np.arange(0, i, scale) for i in array.shape]
-            bin_edges = [np.hstack([0 - offset, x + offset]) for x in bin_edges]
-            H1, e = np.histogramdd(voxels, bins=bin_edges)
-            touched.append(np.sum(H1 > 0))
-        Ns.append(touched)
-    Ns = np.array(Ns)
+    if p != int(p) or any(s != width for s in c.shape):
+        p = int(np.ceil(p))
+        width = 2**p
+        new_shape = (width, ) * dim
+        mz = np.zeros(new_shape, dtype=int)
+        slices = tuple(slice(0, s) for s in c.shape)
+        mz[slices] = c
+        c = mz
 
-    # From all sets N found, keep the smallest one at each scale
-    Ns = Ns.min(axis=1)
+    n = np.zeros(p + 1, dtype=int)
+    n[p] = np.sum(c)
 
-    # Only keep scales at which Ns changed
-    scales = np.array([np.min(scales[Ns == x]) for x in np.unique(Ns)])
+    for g in range(p - 1, -1, -1):
+        siz = 2**(p - g)
+        siz2 = siz // 2
 
-    Ns = np.unique(Ns)
-    Ns = Ns[Ns > 0]
-    scales = scales[: len(Ns)]
-    # perform fit
-    coeffs = np.polyfit(np.log(1 / scales), np.log(Ns), 1)
+        if dim == 1:
+            for i in range(0, width - siz + 1, siz):
+                c[i] = c[i] or c[i + siz2]
+            n[g] = np.sum(c[0:width - siz + 1:siz])
+        elif dim == 2:
+            for i in range(0, width - siz + 1, siz):
+                for j in range(0, width - siz + 1, siz):
+                    c[i, j] = (c[i, j] or c[i + siz2, j] or c[i, j + siz2]
+                               or c[i + siz2, j + siz2])
+            n[g] = np.sum(c[0:width - siz + 1:siz, 0:width - siz + 1:siz])
+        elif dim == 3:
+            for i in range(0, width - siz + 1, siz):
+                for j in range(0, width - siz + 1, siz):
+                    for k in range(0, width - siz + 1, siz):
+                        c[i, j, k] = (c[i, j, k] or c[i + siz2, j, k]
+                                      or c[i, j + siz2, k]
+                                      or c[i + siz2, j + siz2, k]
+                                      or c[i, j, k + siz2]
+                                      or c[i + siz2, j, k + siz2]
+                                      or c[i, j + siz2, k + siz2]
+                                      or c[i + siz2, j + siz2, k + siz2])
+            n[g] = np.sum(c[0:width - siz + 1:siz, 0:width - siz + 1:siz,
+                            0:width - siz + 1:siz])
 
-    # make plot
-    if plot:
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.scatter(
-            np.log(1 / scales), np.log(np.unique(Ns)), c="teal", label="Measured ratios"
-        )
-        ax.set_ylabel("$\log N(\epsilon)$")
-        ax.set_xlabel("$\log 1/ \epsilon$")
-        fitted_y_vals = np.polyval(coeffs, np.log(1 / scales))
-        ax.plot(
-            np.log(1 / scales),
-            fitted_y_vals,
-            "k--",
-            label=f"Fit: {np.round(coeffs[0],3)}X+{coeffs[1]}",
-        )
-        ax.legend()
-    return coeffs[0]
+    n = n[::-1]
+    r = 2**np.arange(0, p + 1)
+
+    if plot_type == "slope":
+        s = -np.gradient(np.log(n)) / np.gradient(np.log(r))
+        return r, s
+    else:
+        return n, r
 
 
-def calc_pi10(
-    wa: list, rad: list, plot: bool = False, name: str = "anon", save_dir: str = "./"
-) -> float:
+def calc_pi10(wa: list,
+              rad: list,
+              plot: bool = False,
+              name: str = "anon",
+              save_dir: str = "./") -> float:
 
     # Calculate regression line
     x = np.array(rad).reshape((-1, 1))
@@ -104,7 +90,8 @@ def calc_pi10(
     # Calculate best fit for regression line
     pi10_model = LinearRegression(n_jobs=-1).fit(x, y)
     logging.info(f"Pi10 R2 value is: {pi10_model.score(x, y)}")
-    logging.info(f"Slope {pi10_model.coef_} and intercept {pi10_model.intercept_}")
+    logging.info(
+        f"Slope {pi10_model.coef_} and intercept {pi10_model.intercept_}")
 
     # Get sqrt WA for hypothetical airway of 10mm internal perimeter
     pi10 = pi10_model.predict([[10]])
@@ -138,9 +125,8 @@ def agg_param(tree: pd.DataFrame, gens: list, param: str) -> float:
     param
     """
 
-    return tree[(tree.generation >= gens[0]) & (tree.generation <= gens[1])][
-        param
-    ].mean()
+    return tree[(tree.generation >= gens[0])
+                & (tree.generation <= gens[1])][param].mean()
 
 
 def total_count(tree: pd.DataFrame) -> int:

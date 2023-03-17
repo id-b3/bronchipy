@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.0.9'
+VERSION = '0.1.0'
 DESCRIPTION = 'Supporting tools for processing the output of the AirFlow'\
     ' pipeline.'
 LONG_DESCRIPTION = 'Scripts and functions to process the output of AirFlow'\
