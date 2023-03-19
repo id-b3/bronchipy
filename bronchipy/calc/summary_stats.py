@@ -102,6 +102,19 @@ def calc_pi10(wa: list,
     return pi10[0]
 
 
+def inter_tapering(air_tree: pd.DataFrame) -> float:
+    """
+    Calculate inter-branch tapering for the entire airway tree.
+    Process:
+        1: Get list of terminal branches in the airway tree.
+        2: For each terminal branch, trace parent-tree and add ids to a list.
+        3: For each id list, create a centreline points list and measurements list.
+        4: Use lists in the calc_taper function for each path.
+        5: Get average taper.
+
+    """
+
+
 def param_by_gen(air_tree: pd.DataFrame, gen: int, param: str) -> float:
     """
 

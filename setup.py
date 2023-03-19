@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.1.0'
+VERSION = '0.2.0'
 DESCRIPTION = 'Supporting tools for processing the output of the AirFlow'\
     ' pipeline.'
 LONG_DESCRIPTION = 'Scripts and functions to process the output of AirFlow'\
@@ -16,7 +16,7 @@ setup(name="bronchipy",
       long_description_content_type="text/markdown",
       long_description=LONG_DESCRIPTION,
       packages=find_packages(),
-      install_requires=['nibabel==4.0.1', 'pydicom==2.3.0', 'numpy==1.19.2',
+      install_requires=['antspyx==0.3.7', 'nibabel==4.0.1', 'pydicom==2.3.0', 'numpy==1.19.2',
                         'pandas==1.4.3', 'scipy==1.5.3',
                         'scikit-learn==1.1.2', 'matplotlib==3.3.4',
                         'SimpleITK==1.2.4', 'scikit-image==0.19.3'],
@@ -24,7 +24,7 @@ setup(name="bronchipy",
           'python', 'analysis', 'medical', 'imaging', 'research'
       ],
       classifiers=[
-          "Development Status :: 3 - Alpha",
+          "Development Status :: 4 - Alpha",
           "Intended Audience :: Science/Research",
           "Programming Language :: Python :: 3",
           "Operating System :: Unix",
