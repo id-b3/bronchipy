@@ -10,6 +10,7 @@ from .io import branchio as brio
 
 
 class AirwayTree:
+
     def __init__(self, **kwargs):
         """
 
@@ -38,13 +39,15 @@ class AirwayTree:
         vol_header = nib.load(kwargs["volume"]).header
         self.vol_dims = vol_header.get_data_shape()
         self.vol_vox_dims = vol_header.get_zooms()
+        self.paths = {}
 
         if "config" in kwargs:
             self.config = kwargs.get("config", None)
         else:
             # TODO: IMPLEMENT CONFIG FILE!!
             self.config = {"min_length": 5.0}
-        logging.debug(f"Ignoring airways smaller than {self.config['min_length']}")
+        logging.debug(
+            f"Ignoring airways smaller than {self.config['min_length']}")
 
         if "tree_csv" in kwargs:
             self.tree = brio.load_tree_csv(kwargs["tree_csv"])
@@ -75,104 +78,106 @@ class AirwayTree:
         branch_df = brio.load_branch_csv(self.files["branch"])
         # Apply the voxel dimensions to the points and create a data entry containing the centreline points in mm.
         branch_df["centreline"] = branch_df.apply(
-            lambda row: [self.vox_to_mm(point) for point in row.points], axis=1
-        )
+            lambda row: [self.vox_to_mm(point) for point in row.points],
+            axis=1)
         logging.debug(branch_df.columns)
         # Add entry describing the number of points in the airway measurement.
-        branch_df["num_points"] = branch_df.apply(lambda row: len(row.points), axis=1)
+        branch_df["num_points"] = branch_df.apply(lambda row: len(row.points),
+                                                  axis=1)
         # Calculate and add the branch lengths in mm.
         branch_df["length"] = branch_df.apply(
-            lambda row: calc_branch_length(row.centreline), axis=1
-        )
+            lambda row: calc_branch_length(row.centreline), axis=1)
 
         # Load inner measurements csvs into dataframes
         inner_df = brio.load_csv(self.files["inner"], True)
         inner_df.drop(
-            "generation", axis=1, inplace=True
-        )  # Redundant as branch_df already has generations
+            "generation", axis=1,
+            inplace=True)  # Redundant as branch_df already has generations
         # Calculate the area from the radius and insert as new column. Using pi*r^1
         inner_df["inner_global_area"] = inner_df.apply(
-            lambda row: pow(row.inner_radius, 2) * pi, axis=1
-        )
+            lambda row: pow(row.inner_radius, 2) * pi, axis=1)
 
         # Load inner smoothed measurements csvs into dataframes
-        inner_radius_df = brio.load_local_radius_csv(self.files["inner_rad"], True)
+        inner_radius_df = brio.load_local_radius_csv(self.files["inner_rad"],
+                                                     True)
 
         # Load outer measurements csvr into dataframes
         outer_df = brio.load_csv(self.files["outer"], False)
         outer_df.drop("generation", axis=1, inplace=True)
         # Calculate the area from the radius and insert as new column.
         outer_df["outer_global_area"] = outer_df.apply(
-            lambda row: pow(row.outer_radius, 2) * pi, axis=1
-        )
+            lambda row: pow(row.outer_radius, 2) * pi, axis=1)
 
         # Load outer smoothed measurements csvs into dataframes
-        outer_radius_df = brio.load_local_radius_csv(self.files["outer_rad"], False)
+        outer_radius_df = brio.load_local_radius_csv(self.files["outer_rad"],
+                                                     False)
         logging.debug(outer_radius_df.dtypes)
 
         # Combine all the loaded data frames based on branches ID.
-        all_dfs = [branch_df, inner_df, inner_radius_df, outer_df, outer_radius_df]
+        all_dfs = [
+            branch_df, inner_df, inner_radius_df, outer_df, outer_radius_df
+        ]
         for df in all_dfs:
             logging.debug(df.dtypes)
 
         organised_tree = reduce(
-            lambda left, right: pd.merge(left, right, on=["branch"], how="outer"),
+            lambda left, right: pd.merge(
+                left, right, on=["branch"], how="outer"),
             all_dfs,
         )
         organised_tree.set_index("branch", inplace=True)
 
         # Drop branches with 0 for measurements
-        organised_tree = organised_tree[organised_tree.outer_global_area != 0.0]
+        organised_tree = organised_tree[
+            organised_tree.outer_global_area != 0.0]
         # Drop branches smaller than minimum length
         organised_tree = organised_tree[
-            organised_tree.length > self.config["min_length"]
-        ]
+            organised_tree.length > self.config["min_length"]]
 
         # Calculate Global Wall Area and WA%
         organised_tree["wall_global_area"] = organised_tree.apply(
-            lambda row: row.outer_global_area - row.inner_global_area, axis=1
-        )
+            lambda row: row.outer_global_area - row.inner_global_area, axis=1)
         organised_tree["wall_global_area_perc"] = organised_tree.apply(
-            lambda row: (row.wall_global_area / row.outer_global_area) * 100, axis=1
-        )
+            lambda row: (row.wall_global_area / row.outer_global_area) * 100,
+            axis=1)
 
         # Calculate Global Wall Thickness and WT%
         organised_tree["wall_global_thickness"] = organised_tree.apply(
-            lambda row: row.outer_radius - row.inner_radius, axis=1
-        )
+            lambda row: row.outer_radius - row.inner_radius, axis=1)
         organised_tree["wall_global_thickness_perc"] = organised_tree.apply(
-            lambda row: (row.wall_global_thickness - row.outer_radius) * 100, axis=1
-        )
+            lambda row: (row.wall_global_thickness - row.outer_radius) * 100,
+            axis=1)
 
         # Calculate Area Tapering
         organised_tree["lumen_tapering"] = organised_tree.apply(
-            lambda row: calc_tapering(row.inner_radii, row.centreline, perc=False),
+            lambda row: calc_tapering(
+                row.inner_radii, row.centreline, perc=False),
             axis=1,
         )
         organised_tree["lumen_tapering_perc"] = organised_tree.apply(
-            lambda row: calc_tapering(row.inner_radii, row.centreline, perc=True),
+            lambda row: calc_tapering(
+                row.inner_radii, row.centreline, perc=True),
             axis=1,
         )
 
         organised_tree["total_tapering"] = organised_tree.apply(
-            lambda row: calc_tapering(row.outer_radii, row.centreline, perc=False),
+            lambda row: calc_tapering(
+                row.outer_radii, row.centreline, perc=False),
             axis=1,
         )
         organised_tree["total_tapering_perc"] = organised_tree.apply(
-            lambda row: calc_tapering(row.outer_radii, row.centreline, perc=True),
+            lambda row: calc_tapering(
+                row.outer_radii, row.centreline, perc=True),
             axis=1,
         )
 
         # Get midpoint co-ordinates
         organised_tree["x"] = organised_tree.apply(
-            lambda row: row.points[int(len(row.points) / 2)][0], axis=1
-        )
+            lambda row: row.points[int(len(row.points) / 2)][0], axis=1)
         organised_tree["y"] = organised_tree.apply(
-            lambda row: row.points[int(len(row.points) / 2)][1], axis=1
-        )
+            lambda row: row.points[int(len(row.points) / 2)][1], axis=1)
         organised_tree["z"] = organised_tree.apply(
-            lambda row: row.points[int(len(row.points) / 2)][2], axis=1
-        )
+            lambda row: row.points[int(len(row.points) / 2)][2], axis=1)
 
         return organised_tree
 
@@ -214,6 +219,46 @@ class AirwayTree:
             point[1] * self.vol_vox_dims[1],
             point[2] * self.vol_vox_dims[2],
         )
+
+    def trace_paths(self):
+        """
+        For each terminal branch in the airway tree self.tree, looks back at the parent recursively to create a list of IDs from terminal to initial branch (trachea, 0). 
+        Reverses the list to get the path trachea->terminal branch. Performs it for all terminal branches and saves it to self.paths.
+        Args:
+            None
+        Returns:
+            None
+        """
+
+        def _get_terminal_branches(self):
+            """
+            Gets terminal branches by finding any branch without a parent
+            """
+
+            branches = self.tree[self.tree.children == []]
+            return branches.branch
+
+        # Loop through all terminal branches
+        for branch_id in self.tree.get_terminal_branches():
+
+            # Initialize an empty list to store the path from terminal to initial branch
+            path = []
+
+            # Start from the current terminal branch and trace back to the root of the tree
+            current_branch_id = branch_id
+            while current_branch_id != 0:
+                path.append(current_branch_id)
+                current_branch = self.tree.get_branch(current_branch_id)
+                current_branch_id = current_branch.parent
+
+            # Add the initial branch (trachea) to the end of the path
+            path.append(0)
+
+            # Reverse the path to get the correct order (trachea -> terminal branch)
+            path.reverse()
+
+            # Add the path to the dictionary of paths
+            self.paths[branch_id] = path
 
     def get_branch(self, branch_id: int) -> pd.Series:
         """

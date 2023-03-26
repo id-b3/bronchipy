@@ -37,7 +37,7 @@ def main(args):
     in_list.sort()
     print("Loaded list. Starting AFD calculation")
 
-    with mp.Pool(4) as pool:
+    with mp.Pool(10) as pool:
         results = list(tqdm(pool.imap_unordered(calc_afd, in_list), total=len(in_list)))
 
     header = ["patientID", "bp_afd"]
