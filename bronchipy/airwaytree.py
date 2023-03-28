@@ -1,12 +1,17 @@
 from functools import reduce
 from math import pi, pow
+import pkg_resources
 
+from ants import image_read
 import nibabel as nib
 import pandas as pd
+import numpy as np
 import logging
 
 from .calc.measure_airways import calc_branch_length, calc_tapering
+from .calc.summary_stats import calc_pi10, fractal_dimension
 from .io import branchio as brio
+from .util.imageoperations import affine_register
 
 
 class AirwayTree:
@@ -60,11 +65,13 @@ class AirwayTree:
                 "outer_rad": kwargs.get("outer_radius_file", None),
                 "vol": kwargs.get("volume", None),
             }
-            self.tree = (
-                self.organise_tree()
-            )  #: only necessary if the tree_csv has not been previously made.
+            self.tree = self.organise_tree()
+            self.get_tapering()
+            # Drop branches with 0 for measurements
+            # Drop branches smaller than minimum length
+            self.tree = self.tree[self.tree.length > self.config['min_length']]
 
-    def organise_tree(self) -> pd.DataFrame:
+    def organise_tree(self, full: bool = False) -> pd.DataFrame:
         """
         Takes the input files and combines them into a single merged dataframe.
         Calculates and inserts columns containing branch area data too.
@@ -127,12 +134,10 @@ class AirwayTree:
         )
         organised_tree.set_index("branch", inplace=True)
 
-        # Drop branches with 0 for measurements
+        self.dropped_branches = organised_tree[organised_tree.outer_global_area
+                                               == 0.0]
         organised_tree = organised_tree[
             organised_tree.outer_global_area != 0.0]
-        # Drop branches smaller than minimum length
-        organised_tree = organised_tree[
-            organised_tree.length > self.config["min_length"]]
 
         # Calculate Global Wall Area and WA%
         organised_tree["wall_global_area"] = organised_tree.apply(
@@ -179,7 +184,7 @@ class AirwayTree:
         organised_tree["z"] = organised_tree.apply(
             lambda row: row.points[int(len(row.points) / 2)][2], axis=1)
 
-        return organised_tree
+        return organised_tree.round(3)
 
     def set_minimum_length(self, minlen: float = 5.0):
         """
@@ -200,6 +205,78 @@ class AirwayTree:
         Number of branches in airway tree.
         """
         return self.tree.shape[0]
+
+    def get_tapering(self):
+
+        # Calculating tapering
+        self.trace_paths()
+
+        lumen_tapers = []
+        total_tapers = []
+
+        # Loop through each path in the list of paths
+        for path in self.paths:
+            # Select the rows corresponding to the current path
+            path_tree = self.tree.loc[path]
+            # Extract the inner radii, outer radii, and centreline data
+
+            # Calculate the lumen taper and append it to lumen_tapers
+            lum_taper = calc_tapering(path_tree.inner_radii,
+                                      path_tree.centreline,
+                                      perc=False)
+            lumen_tapers.append(lum_taper)
+            # Calculate the total taper and append it to total_tapers
+            tot_taper = calc_tapering(path_tree.outer_radii,
+                                      path_tree.centreline,
+                                      perc=False)
+            total_tapers.append(tot_taper)
+
+        self.tapers_lumen = lumen_tapers
+        self.tapers_total = total_tapers
+
+        self.taper_lumen = [
+            np.mean(lumen_tapers),
+            np.std(lumen_tapers),
+            np.median(lumen_tapers)
+        ]
+        self.taper_total = [
+            np.mean(total_tapers),
+            np.std(total_tapers),
+            np.median(total_tapers)
+        ]
+
+    def get_pi10(self,
+                 plot_name: str = None,
+                 plot_path: str = None,
+                 max_gen: int = 5) -> float:
+        plot = False
+
+        pi10_tree = self.tree[(self.tree.generation <= max_gen)]
+        logging.info(
+            f"Calculating Pi10 for generations {pi10_tree.generation.unique()}"
+        )
+        if plot_name is not None and plot_path is not None:
+            plot = True
+
+        self.pi10 = calc_pi10(
+            pi10_tree["wall_global_area"],
+            pi10_tree["inner_radius"],
+            name=plot_name,
+            save_dir=plot_path,
+            plot=plot,
+        )
+        return self.pi10
+
+    def get_airway_fractal_dimension(self, seg_path: str) -> float:
+        fixed_path = pkg_resources.resource_filename(
+            'bronchipy', 'assets/fixed_lumen_segmentation.nii.gz')
+        fixed = image_read(fixed_path)
+        moving = image_read(str(seg_path))
+        air_tree = affine_register(fixed, moving)
+        n, r = fractal_dimension(air_tree)
+        afd_arr = -np.diff(np.log(n)) / np.diff(np.log(r))
+        self.afd = np.mean(afd_arr[2:-2])
+        return self.afd
 
     def vox_to_mm(self, point: tuple) -> tuple:
         """
@@ -230,16 +307,16 @@ class AirwayTree:
             None
         """
 
-        def _get_terminal_branches(self):
+        def _get_terminal_branches():
             """
             Gets terminal branches by finding any branch without a parent
             """
-
-            branches = self.tree[self.tree.children == []]
-            return branches.branch
+            empty_rows = self.tree[self.tree['children'].apply(
+                lambda x: len(x) == 0)]
+            return empty_rows.index.to_list()
 
         # Loop through all terminal branches
-        for branch_id in self.tree.get_terminal_branches():
+        for branch_id in _get_terminal_branches():
 
             # Initialize an empty list to store the path from terminal to initial branch
             path = []
@@ -248,11 +325,21 @@ class AirwayTree:
             current_branch_id = branch_id
             while current_branch_id != 0:
                 path.append(current_branch_id)
-                current_branch = self.tree.get_branch(current_branch_id)
-                current_branch_id = current_branch.parent
+                current_branch = self.get_branch(current_branch_id)
+                if current_branch is not None:
+                    current_branch_id = current_branch.parent
+                else:
+                    current_branch = self.dropped_branches.loc[
+                        current_branch_id]
+                    if current_branch is not None:
+                        current_branch_id = current_branch.parent
+                    else:
+                        logging.debug(
+                            f"Broken path {'->'.join([str(i) for i in path])}")
+                        break
 
             # Add the initial branch (trachea) to the end of the path
-            path.append(0)
+            # path.append(0)
 
             # Reverse the path to get the correct order (trachea -> terminal branch)
             path.reverse()
@@ -306,3 +393,4 @@ class AirwayTree:
             return self.tree.loc[branch_id]
         except KeyError as e:
             logging.error(f"No branch with id {e}.")
+            return None

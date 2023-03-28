@@ -29,9 +29,9 @@ def calc_branch_length(points: list) -> float:
     return branch_length
 
 
-def calc_smoothing(
-    in_data: np.array, smo_filter: np.array, is_padded: bool = True
-) -> np.array:
+def calc_smoothing(in_data: np.array,
+                   smo_filter: np.array,
+                   is_padded: bool = True) -> np.array:
     """
     Apply smoothing to data by convolution with a filter
 
@@ -86,7 +86,8 @@ def calc_local_orientations(points: np.array, min_width: float) -> np.array:
         else:
             points_left = points[:i]
             dists_points_left = distance.cdist([points[i]], points_left)[0]
-            indexes_further_width = np.argwhere(dists_points_left > min_width / 2)
+            indexes_further_width = np.argwhere(
+                dists_points_left > min_width / 2)
             if len(indexes_further_width) == 0:
                 ind_l = 0
             else:
@@ -95,16 +96,18 @@ def calc_local_orientations(points: np.array, min_width: float) -> np.array:
         if i == num_points - 1:  # special case for last (rightmost) point
             ind_r = num_points - 1
         else:
-            points_right = points[i + 1 :]
+            points_right = points[i + 1:]
             dists_points_right = distance.cdist([points[i]], points_right)[0]
-            indexes_further_width = np.argwhere(dists_points_right > min_width / 2)
+            indexes_further_width = np.argwhere(
+                dists_points_right > min_width / 2)
             if len(indexes_further_width) == 0:
                 ind_r = num_points - 1
             else:
                 ind_r = i + 1 + np.min(indexes_further_width)
 
         orientation_this = points[ind_r, :] - points[ind_l, :]
-        orientations[i, :] = orientation_this / np.linalg.norm(orientation_this)
+        orientations[
+            i, :] = orientation_this / np.linalg.norm(orientation_this)
 
     return orientations
 
@@ -120,17 +123,17 @@ def calc_tapering(yData: list, centreline_pos: list, perc: bool = False):
     carr = np.array(centreline_pos)
 
     if len(yData) < 2:
-        logging.warning(f"Not enough data for extraction of tapering info.")
+        logging.warning("Not enough data for extraction of tapering info.")
         return None
 
     # xx = distance.pdist(carr, metric='euclidean')  # Calculate the euclidian distance between points along centreline.
     xx = np.zeros(carr.shape[0])
     for i in range(1, len(xx)):
-        xx[i] = (
-            distance.euclidean(carr[i - 1], carr[i]) + xx[i - 1]
-        )  # Convert from relative distance to absolute distance.
+        xx[i] = (distance.euclidean(carr[i - 1], carr[i]) + xx[i - 1]
+                 )  # Convert from relative distance to absolute distance.
 
-    brfit = np.polyfit(xx, yarr, deg=1)  # Fit a linear polynomial to the points
+    brfit = np.polyfit(xx, yarr,
+                       deg=1)  # Fit a linear polynomial to the points
     tapering = -brfit[0]
     tapering_perc = (-brfit[0] / brfit[1]) * 100
 
