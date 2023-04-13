@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-from scipy.spatial import distance
+from scipy.interpolate import UnivariateSpline
 
 
 def calc_branch_length(points: list) -> float:
@@ -112,35 +112,30 @@ def calc_local_orientations(points: np.array, min_width: float) -> np.array:
     return orientations
 
 
-# https://github.com/id-b3/Air_Flow_ImaLife/blob/03b0fd73c5fe87dae835caf67ed5b91edce079d0/airway_analysis/src_matlab/functions/measureAirways.m
-def calc_tapering(yData: list, centreline_pos: list, perc: bool = False):
-    """
-    Calculates tapering slope and percentage for a measurement.
-    :param: yData - list of measurements e.g. radius, area
-    """
-
-    yarr = np.array(yData)
-    carr = np.array(centreline_pos)
-
+def calc_tapering(yData: list, centreline: list, use_robust=False):
     if len(yData) < 2:
-        logging.warning("Not enough data for extraction of tapering info.")
-        return None
+        return np.nan, np.nan, yData
 
-    # xx = distance.pdist(carr, metric='euclidean')  # Calculate the euclidian distance between points along centreline.
-    xx = np.zeros(carr.shape[0])
-    for i in range(1, len(xx)):
-        xx[i] = (distance.euclidean(carr[i - 1], carr[i]) + xx[i - 1]
-                 )  # Convert from relative distance to absolute distance.
+    # accumulated distance between centreline points
+    xx = np.cumsum(np.linalg.norm(centreline[1:] - centreline[:-1], axis=1))
 
-    brfit = np.polyfit(xx, yarr,
-                       deg=1)  # Fit a linear polynomial to the points
-    tapering = -brfit[0]
-    tapering_perc = (-brfit[0] / brfit[1]) * 100
-
-    if perc:
-        return tapering_perc
+    # fitting
+    if use_robust:
+        fit_coeffs = np.polyfit(xx, yData, 1, w=np.sqrt(xx))
     else:
-        return tapering
+        fit_coeffs = np.polyfit(xx, yData, 1)
+
+    # calculate tapering and tapering percentage
+    vStart = fit_coeffs[1]
+    vEnd = fit_coeffs[0] * xx[-1] + fit_coeffs[1]
+    tapering = (vStart - vEnd) / xx[-1]
+    tapering_percentage = tapering / vStart * 100
+
+    # obtain interpolated radi measurements
+    f = UnivariateSpline(xx, yData, k=1, s=0)
+    interpolatedValues = f(xx)
+
+    return tapering, tapering_percentage, interpolatedValues
 
 
 def get_kernel(window_width: int, sigma: int) -> list:
