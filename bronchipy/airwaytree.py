@@ -221,13 +221,13 @@ class AirwayTree:
             # Extract the inner radii, outer radii, and centreline data
 
             # Calculate the lumen taper and append it to lumen_tapers
-            lum_taper = calc_tapering(path_tree.inner_radii,
-                                      path_tree.centreline,
+            lum_taper = calc_tapering(path_tree.inner_radii.explode().to_list(),
+                                      path_tree.centreline.explode().to_list(),
                                       perc=False)
             lumen_tapers.append(lum_taper)
             # Calculate the total taper and append it to total_tapers
-            tot_taper = calc_tapering(path_tree.outer_radii,
-                                      path_tree.centreline,
+            tot_taper = calc_tapering(path_tree.outer_radii.explode().to_list(),
+                                      path_tree.centreline.explode().to_list(),
                                       perc=False)
             total_tapers.append(tot_taper)
 
