@@ -212,12 +212,12 @@ class AirwayTree:
             # Calculate the lumen taper and append it to lumen_tapers
             lum_taper = calc_tapering(path_tree.inner_radii,
                                       path_tree.centreline,
-                                      perc=False)
+                                      use_robust=True)[0]
             lumen_tapers.append(lum_taper)
             # Calculate the total taper and append it to total_tapers
             tot_taper = calc_tapering(path_tree.outer_radii,
                                       path_tree.centreline,
-                                      perc=False)
+                                      use_robust=True)[0]
             total_tapers.append(tot_taper)
 
         self.tapers_lumen = lumen_tapers
